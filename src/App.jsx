@@ -59,7 +59,7 @@ function calculateDistanceMeters(points) {
   return turf.length(line, { units: "meters" });
 }
 
-// ✅ LocateButton with Leaflet event stopping
+// ✅ LocateButton
 function LocateButton({ setUserLocation }) {
   const map = useMap();
   const btnRef = useRef(null);
@@ -81,19 +81,18 @@ function LocateButton({ setUserLocation }) {
       (pos) => {
         const { latitude, longitude } = pos.coords;
 
-        // ✅ Add small random offset for approximate location
-        const offsetLat = latitude  // ~±200m
-        const offsetLng = longitude 
+        // ✅ Use exact coords (mobile GPS accurate, desktop approx by default)
+        const approxLat = latitude;
+        const approxLng = longitude;
 
-        console.log("✅ Approx Location retrieved:", offsetLat, offsetLng);
-        alert(`Approximate location:\nLat: ${offsetLat.toFixed(5)}, Lng: ${offsetLng.toFixed(5)}`);
+        console.log("✅ Location retrieved:", approxLat, approxLng);
 
-        setUserLocation([offsetLat, offsetLng]); // optional (in case you want to store it)
-        map.flyTo([offsetLat, offsetLng], 14, { animate: true, duration: 2 });  // zoom to area only, no marker
+        setUserLocation([approxLat, approxLng]);
+        map.flyTo([approxLat, approxLng], 14.5, { animate: true, duration: 2 });
       },
       (err) => {
         console.warn("❌ Location error:", err);
-        if (err.code === 1) alert("Location permission denied. Please allow access and try again.");
+        if (err.code === 1) alert("Location permission denied.");
         else if (err.code === 2) alert("Unable to determine your location.");
         else if (err.code === 3) alert("Location request timed out.");
       },
@@ -196,9 +195,7 @@ export default function App() {
           <Polyline positions={distancePoints} color="red" />
         )}
 
-        {/* {userLocation && <Marker position={userLocation} />} */}
-
-        {/* ✅ Locate Button inside map but safe */}
+        {/* ✅ Locate Button */}
         <LocateButton setUserLocation={setUserLocation} />
       </MapContainer>
 
