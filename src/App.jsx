@@ -7,13 +7,24 @@ import {
   useMap,
   useMapEvents,
   LayersControl,
+  ScaleControl,
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import * as turf from "@turf/turf";
+import L from "leaflet";
+
+// ✅ Fix missing marker icons in Vite builds
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: new URL("leaflet/dist/images/marker-icon-2x.png", import.meta.url).href,
+  iconUrl: new URL("leaflet/dist/images/marker-icon.png", import.meta.url).href,
+  shadowUrl: new URL("leaflet/dist/images/marker-shadow.png", import.meta.url).href,
+});
 
 const { BaseLayer } = LayersControl;
 
+// ✅ Handle polygon & distance drawing
 function PolygonDrawer({ setPoints, mode, setDistancePoints }) {
   useMapEvents({
     click(e) {
@@ -33,6 +44,7 @@ function PolygonDrawer({ setPoints, mode, setDistancePoints }) {
   return null;
 }
 
+// ✅ Turf.js area calculation
 function calculateAreaMeters(coords) {
   if (coords.length < 3) return 0;
   const turfCoords = coords.map(([lat, lng]) => [lng, lat]);
@@ -40,16 +52,58 @@ function calculateAreaMeters(coords) {
   return turf.area(polygon);
 }
 
+// ✅ Turf.js distance calculation
 function calculateDistanceMeters(points) {
   if (points.length < 2) return 0;
   const line = turf.lineString(points.map(([lat, lng]) => [lng, lat]));
   return turf.length(line, { units: "meters" });
 }
 
+// ✅ LocateButton with Leaflet event stopping
 function LocateButton({ setUserLocation }) {
   const map = useMap();
+  const btnRef = useRef(null);
+
+  useEffect(() => {
+    if (btnRef.current) {
+      L.DomEvent.disableClickPropagation(btnRef.current);
+      L.DomEvent.disableScrollPropagation(btnRef.current);
+    }
+  }, []);
+
+  const handleLocate = () => {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser.");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+
+        // ✅ Add small random offset for approximate location
+        const offsetLat = latitude  // ~±200m
+        const offsetLng = longitude 
+
+        console.log("✅ Approx Location retrieved:", offsetLat, offsetLng);
+        alert(`Approximate location:\nLat: ${offsetLat.toFixed(5)}, Lng: ${offsetLng.toFixed(5)}`);
+
+        setUserLocation([offsetLat, offsetLng]); // optional (in case you want to store it)
+        map.flyTo([offsetLat, offsetLng], 14, { animate: true, duration: 2 });  // zoom to area only, no marker
+      },
+      (err) => {
+        console.warn("❌ Location error:", err);
+        if (err.code === 1) alert("Location permission denied. Please allow access and try again.");
+        else if (err.code === 2) alert("Unable to determine your location.");
+        else if (err.code === 3) alert("Location request timed out.");
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
+
   return (
     <button
+      ref={btnRef}
       style={{
         position: "absolute",
         top: 260,
@@ -62,20 +116,7 @@ function LocateButton({ setUserLocation }) {
         padding: "8px 12px",
         cursor: "pointer",
       }}
-      onClick={() => {
-        if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(
-            (pos) => {
-              const { latitude, longitude } = pos.coords;
-              setUserLocation([latitude, longitude]);
-              map.flyTo([latitude, longitude], 15);
-            },
-            (err) => alert("Unable to get location: " + err.message)
-          );
-        } else {
-          alert("Geolocation is not supported by your browser.");
-        }
-      }}
+      onClick={handleLocate}
     >
       📍 Locate Me
     </button>
@@ -93,7 +134,7 @@ export default function App() {
 
   return (
     <div style={{ height: "100vh", width: "100vw", position: "relative" }}>
-      {/* Info Box */}
+      {/* ✅ Info Box */}
       <div
         style={{
           position: "absolute",
@@ -128,8 +169,9 @@ export default function App() {
         )}
       </div>
 
-      {/* Map */}
+      {/* ✅ Map */}
       <MapContainer center={[20, 0]} zoom={2} style={{ height: "100%", width: "100%" }}>
+        <ScaleControl position="bottomleft" />
         <LayersControl position="topright">
           <BaseLayer checked name="Street View">
             <TileLayer
@@ -148,21 +190,19 @@ export default function App() {
         <PolygonDrawer setPoints={setPoints} mode={mode} setDistancePoints={setDistancePoints} />
 
         {points.length > 2 && mode === "area" && <Polygon positions={points} />}
-        {points.map(
-          (pos, idx) => mode === "area" && <Marker key={idx} position={pos} />
-        )}
+        {points.map((pos, idx) => mode === "area" && <Marker key={idx} position={pos} />)}
 
         {distancePoints.length === 2 && mode === "distance" && (
           <Polyline positions={distancePoints} color="red" />
         )}
 
-        {userLocation && <Marker position={userLocation} />}
+        {/* {userLocation && <Marker position={userLocation} />} */}
 
-        {/* ✅ LocateButton is ONLY inside MapContainer now */}
+        {/* ✅ Locate Button inside map but safe */}
         <LocateButton setUserLocation={setUserLocation} />
       </MapContainer>
 
-      {/* Reset Button */}
+      {/* ✅ Reset Button */}
       <button
         style={{
           position: "absolute",
@@ -184,7 +224,7 @@ export default function App() {
         Reset
       </button>
 
-      {/* Mode Switch Button */}
+      {/* ✅ Mode Switch Button */}
       <button
         style={{
           position: "absolute",
