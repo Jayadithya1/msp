@@ -72,33 +72,39 @@ function LocateButton({ setUserLocation }) {
   }, []);
 
   const handleLocate = () => {
-    if (!navigator.geolocation) {
-      alert("Geolocation is not supported by your browser.");
-      return;
+  if (!navigator.geolocation) {
+    alert("Geolocation is not supported by your browser.");
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const { latitude, longitude } = pos.coords;
+
+      console.log("✅ Location retrieved:", latitude, longitude);
+      setUserLocation([latitude, longitude]);
+
+      // ✅ Smooth fly to location
+      map.flyTo([latitude, longitude], 16, { animate: true, duration: 2 });
+    },
+    (err) => {
+      console.warn("❌ Location error:", err);
+      if (err.code === 1) {
+        alert("⚠️ Location permission denied.\n\nCheck your browser's site settings and allow location access.");
+      } else if (err.code === 2) {
+        alert("Unable to determine your location.");
+      } else if (err.code === 3) {
+        alert("Location request timed out.");
+      }
+    },
+    {
+      enableHighAccuracy: false, // allow Wi-Fi/cell fallback
+      timeout: 20000,            // wait up to 20s
+      maximumAge: 30000,         // allow cached location up to 30s
     }
+  );
+};
 
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
-
-        // ✅ Use exact coords (mobile GPS accurate, desktop approx by default)
-        const approxLat = latitude;
-        const approxLng = longitude;
-
-        console.log("✅ Location retrieved:", approxLat, approxLng);
-
-        setUserLocation([approxLat, approxLng]);
-        map.flyTo([approxLat, approxLng], 14.5, { animate: true, duration: 2 });
-      },
-      (err) => {
-        console.warn("❌ Location error:", err);
-        if (err.code === 1) alert("Location permission denied.");
-        else if (err.code === 2) alert("Unable to determine your location.");
-        else if (err.code === 3) alert("Location request timed out.");
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
-  };
 
   return (
     <button
@@ -246,3 +252,4 @@ export default function App() {
     </div>
   );
 }
+
