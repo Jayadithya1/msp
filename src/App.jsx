@@ -14,7 +14,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import * as turf from "@turf/turf";
 import L from "leaflet";
 
-// ✅ Fix missing marker icons in Vite builds
+// Fix missing marker icons in Vite builds
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: new URL("leaflet/dist/images/marker-icon-2x.png", import.meta.url).href,
@@ -24,7 +24,7 @@ L.Icon.Default.mergeOptions({
 
 const { BaseLayer } = LayersControl;
 
-// ✅ Handle polygon & distance drawing
+// Polygon / distance drawing
 function PolygonDrawer({ setPoints, mode, setDistancePoints }) {
   useMapEvents({
     click(e) {
@@ -32,11 +32,8 @@ function PolygonDrawer({ setPoints, mode, setDistancePoints }) {
         setPoints((prev) => [...prev, [e.latlng.lat, e.latlng.lng]]);
       } else if (mode === "distance") {
         setDistancePoints((prev) => {
-          if (prev.length === 1) {
-            return [...prev, [e.latlng.lat, e.latlng.lng]];
-          } else {
-            return [[e.latlng.lat, e.latlng.lng]]; // restart with first point
-          }
+          if (prev.length === 1) return [...prev, [e.latlng.lat, e.latlng.lng]];
+          else return [[e.latlng.lat, e.latlng.lng]]; // restart
         });
       }
     },
@@ -44,25 +41,24 @@ function PolygonDrawer({ setPoints, mode, setDistancePoints }) {
   return null;
 }
 
-// ✅ Turf.js area calculation
+// Area / distance helpers (turf)
 function calculateAreaMeters(coords) {
   if (coords.length < 3) return 0;
   const turfCoords = coords.map(([lat, lng]) => [lng, lat]);
   const polygon = turf.polygon([[...turfCoords, turfCoords[0]]]);
   return turf.area(polygon);
 }
-
-// ✅ Turf.js distance calculation
 function calculateDistanceMeters(points) {
   if (points.length < 2) return 0;
   const line = turf.lineString(points.map(([lat, lng]) => [lng, lat]));
   return turf.length(line, { units: "meters" });
 }
 
-// ✅ LocateButton
+// LocateButton (with status banner)
 function LocateButton({ setUserLocation }) {
   const map = useMap();
   const btnRef = useRef(null);
+  const [status, setStatus] = useState(null);
 
   useEffect(() => {
     if (btnRef.current) {
@@ -72,59 +68,107 @@ function LocateButton({ setUserLocation }) {
   }, []);
 
   const handleLocate = () => {
-  if (!navigator.geolocation) {
-    alert("Geolocation is not supported by your browser.");
-    return;
-  }
-  
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      const { latitude, longitude } = pos.coords;
-
-      console.log("✅ Location retrieved:", latitude, longitude);
-      setUserLocation([latitude, longitude]);
-
-      // ✅ Smooth fly to location
-      map.flyTo([latitude, longitude], 16, { animate: true, duration: 2 });
-    },
-    (err) => {
-      console.warn("❌ Location error:", err);
-      if (err.code === 1) {
-        alert("⚠️ Location permission denied.\n\nCheck your browser's site settings and allow location access.");
-      } else if (err.code === 2) {
-        alert("Unable to determine your location.");
-      } else if (err.code === 3) {
-        alert("Location request timed out.");
-      }
-    },
-    {
-      enableHighAccuracy: false, // allow Wi-Fi/cell fallback
-      timeout: 20000,            // wait up to 20s
-      maximumAge: 30000,         // allow cached location up to 30s
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser.");
+      return;
     }
-  );
-};
 
+    console.log("▶️ Requesting location...");
+    setStatus("Requesting location…");
+
+    let watchId;
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        console.log("🎯 getCurrentPosition SUCCESS", pos);
+        const { latitude, longitude, accuracy } = pos.coords;
+
+        setStatus(`Cached fix (±${Math.round(accuracy)}m)… improving…`);
+        setUserLocation([latitude, longitude]);
+        map.flyTo([latitude, longitude], 16, { animate: true, duration: 2 });
+
+        // Try watchPosition for better accuracy
+        watchId = navigator.geolocation.watchPosition(
+          (watchPos) => {
+            const { latitude, longitude, accuracy } = watchPos.coords;
+            console.log("🎯 watchPosition SUCCESS", watchPos);
+            setStatus(`GPS accuracy: ±${Math.round(accuracy)}m`);
+
+            if (accuracy < 50) {
+              navigator.geolocation.clearWatch(watchId);
+              setStatus("✅ Accurate fix acquired");
+            }
+
+            setUserLocation([latitude, longitude]);
+            map.flyTo([latitude, longitude], 16, { animate: true, duration: 1.5 });
+          },
+          (err) => {
+            console.warn("🚨 watchPosition error", err);
+            setStatus("❌ Could not refine GPS fix — try outdoors.");
+          },
+          { enableHighAccuracy: true, timeout: 15000 }
+        );
+
+        // stop watching after 15s if no good fix
+        setTimeout(() => {
+          if (watchId) {
+            navigator.geolocation.clearWatch(watchId);
+            setStatus("⌛ Gave up waiting for better fix");
+          }
+        }, 15000);
+      },
+      (err) => {
+        console.warn("🚨 getCurrentPosition ERROR", err);
+        setStatus("❌ Could not get a location fix — check permissions.");
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
 
   return (
-    <button
-      ref={btnRef}
-      style={{
-        position: "absolute",
-        top: 260,
-        left: 10,
-        zIndex: 1000,
-        background: "#007bff",
-        color: "white",
-        border: "none",
-        borderRadius: 8,
-        padding: "8px 12px",
-        cursor: "pointer",
-      }}
-      onClick={handleLocate}
-    >
-      📍 Locate Me
-    </button>
+    <>
+      <button
+        ref={btnRef}
+        style={{
+          position: "absolute",
+          top: 260,
+          left: 10,
+          zIndex: 1000,
+          background: "#007bff",
+          color: "white",
+          border: "none",
+          borderRadius: 8,
+          padding: "8px 12px",
+          cursor: "pointer",
+        }}
+        onClick={handleLocate}
+      >
+        📍 Locate Me
+      </button>
+
+      {status && (
+        <div
+          style={{
+            position: "absolute",
+            top: 20,
+            right: "50%",
+            transform: "translateX(50%)",
+            background: status.startsWith("✅")
+              ? "rgba(40,167,69,0.9)"
+              : status.startsWith("❌")
+              ? "rgba(220,53,69,0.9)"
+              : "rgba(0,123,255,0.9)",
+            color: "white",
+            padding: "6px 12px",
+            borderRadius: 6,
+            fontSize: 14,
+            zIndex: 2000,
+          }}
+        >
+          {status}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -139,7 +183,7 @@ export default function App() {
 
   return (
     <div style={{ height: "100vh", width: "100vw", position: "relative" }}>
-      {/* ✅ Info Box */}
+      {/* Info box */}
       <div
         style={{
           position: "absolute",
@@ -165,47 +209,35 @@ export default function App() {
         ) : (
           <>
             <strong>Distance Mode</strong>
-            {distancePoints.length === 2 ? (
-              <div>{distance.toFixed(2)} meters</div>
-            ) : (
-              <div>Click two points to measure distance</div>
-            )}
+            {distancePoints.length === 2 ? <div>{distance.toFixed(2)} meters</div> : <div>Click two points to measure distance</div>}
           </>
         )}
       </div>
 
-      {/* ✅ Map */}
+      {/* Map */}
       <MapContainer center={[20, 0]} zoom={2} style={{ height: "100%", width: "100%" }}>
         <ScaleControl position="bottomleft" />
         <LayersControl position="topright">
           <BaseLayer checked name="Street View">
-            <TileLayer
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              attribution="&copy; OpenStreetMap contributors"
-            />
+            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" />
           </BaseLayer>
           <BaseLayer name="Satellite View">
-            <TileLayer
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-              attribution="Tiles © Esri & contributors"
-            />
+            <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" attribution="Tiles © Esri & contributors" />
           </BaseLayer>
         </LayersControl>
 
         <PolygonDrawer setPoints={setPoints} mode={mode} setDistancePoints={setDistancePoints} />
 
         {points.length > 2 && mode === "area" && <Polygon positions={points} />}
-        {points.map((pos, idx) => mode === "area" && <Marker key={idx} position={pos} />)}
+        {points.map((pos, idx) => (mode === "area" ? <Marker key={idx} position={pos} /> : null))}
 
-        {distancePoints.length === 2 && mode === "distance" && (
-          <Polyline positions={distancePoints} color="red" />
-        )}
+        {distancePoints.length === 2 && mode === "distance" && <Polyline positions={distancePoints} color="red" />}
 
-        {/* ✅ Locate Button */}
+        {/* Locate Button */}
         <LocateButton setUserLocation={setUserLocation} />
       </MapContainer>
 
-      {/* ✅ Reset Button */}
+      {/* Reset Button */}
       <button
         style={{
           position: "absolute",
@@ -219,7 +251,8 @@ export default function App() {
           padding: "8px 12px",
           cursor: "pointer",
         }}
-        onClick={() => {
+        onClick={(e) => {
+          e.stopPropagation();
           setPoints([]);
           setDistancePoints([]);
         }}
@@ -227,7 +260,7 @@ export default function App() {
         Reset
       </button>
 
-      {/* ✅ Mode Switch Button */}
+      {/* Mode Switch Button */}
       <button
         style={{
           position: "absolute",
@@ -241,7 +274,8 @@ export default function App() {
           padding: "8px 12px",
           cursor: "pointer",
         }}
-        onClick={() => {
+        onClick={(e) => {
+          e.stopPropagation();
           setMode((prev) => (prev === "area" ? "distance" : "area"));
           setPoints([]);
           setDistancePoints([]);
@@ -252,4 +286,3 @@ export default function App() {
     </div>
   );
 }
-
