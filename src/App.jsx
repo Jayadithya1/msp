@@ -76,7 +76,7 @@ function LocateButton({ setUserLocation }) {
     alert("Geolocation is not supported by your browser.");
     return;
   }
-
+  
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       const { latitude, longitude } = pos.coords;
