@@ -41,7 +41,7 @@ function PolygonDrawer({ setPoints, mode, setDistancePoints }) {
   return null;
 }
 
-// Area / distance helpers (turf)
+// Turf helpers
 function calculateAreaMeters(coords) {
   if (coords.length < 3) return 0;
   const turfCoords = coords.map(([lat, lng]) => [lng, lat]);
@@ -54,7 +54,7 @@ function calculateDistanceMeters(points) {
   return turf.length(line, { units: "meters" });
 }
 
-// LocateButton (with status banner)
+// LocateButton
 function LocateButton({ setUserLocation }) {
   const map = useMap();
   const btnRef = useRef(null);
@@ -73,52 +73,43 @@ function LocateButton({ setUserLocation }) {
       return;
     }
 
-    console.log("▶️ Requesting location...");
-    setStatus("Requesting location…");
-
     let watchId;
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        console.log("🎯 getCurrentPosition SUCCESS", pos);
         const { latitude, longitude, accuracy } = pos.coords;
 
-        setStatus(`Cached fix (±${Math.round(accuracy)}m)… improving…`);
+        // Only show if accuracy is good enough
+        if (accuracy <= 50) {
+          setStatus(`✅ Location accuracy: ±${Math.round(accuracy)}m`);
+        }
+
         setUserLocation([latitude, longitude]);
         map.flyTo([latitude, longitude], 16, { animate: true, duration: 2 });
 
-        // Try watchPosition for better accuracy
+        // Try to improve with watchPosition
         watchId = navigator.geolocation.watchPosition(
           (watchPos) => {
             const { latitude, longitude, accuracy } = watchPos.coords;
-            console.log("🎯 watchPosition SUCCESS", watchPos);
-            setStatus(`GPS accuracy: ±${Math.round(accuracy)}m`);
 
-            if (accuracy < 50) {
+            if (accuracy <= 50) {
+              setStatus(`✅ Location accuracy: ±${Math.round(accuracy)}m`);
               navigator.geolocation.clearWatch(watchId);
-              setStatus("✅ Accurate fix acquired");
             }
 
             setUserLocation([latitude, longitude]);
             map.flyTo([latitude, longitude], 16, { animate: true, duration: 1.5 });
           },
-          (err) => {
-            console.warn("🚨 watchPosition error", err);
-            setStatus("❌ Could not refine GPS fix — try outdoors.");
-          },
+          () => {},
           { enableHighAccuracy: true, timeout: 15000 }
         );
 
-        // stop watching after 15s if no good fix
+        // Stop after 15s
         setTimeout(() => {
-          if (watchId) {
-            navigator.geolocation.clearWatch(watchId);
-            setStatus("⌛ Gave up waiting for better fix");
-          }
+          if (watchId) navigator.geolocation.clearWatch(watchId);
         }, 15000);
       },
-      (err) => {
-        console.warn("🚨 getCurrentPosition ERROR", err);
+      () => {
         setStatus("❌ Could not get a location fix — check permissions.");
       },
       { enableHighAccuracy: true, timeout: 10000 }
@@ -155,9 +146,7 @@ function LocateButton({ setUserLocation }) {
             transform: "translateX(50%)",
             background: status.startsWith("✅")
               ? "rgba(40,167,69,0.9)"
-              : status.startsWith("❌")
-              ? "rgba(220,53,69,0.9)"
-              : "rgba(0,123,255,0.9)",
+              : "rgba(220,53,69,0.9)",
             color: "white",
             padding: "6px 12px",
             borderRadius: 6,
@@ -199,18 +188,24 @@ export default function App() {
         }}
       >
         {mode === "area" ? (
-          <>
-            <strong>Area Mode</strong>
-            <div>{area.toFixed(2)} m²</div>
-            <div>{(area / 1_000_000).toFixed(4)} km²</div>
-            <div>{(area / 10_000).toFixed(4)} hectares</div>
-            <div>{(area * 0.000247105).toFixed(4)} acres</div>
-          </>
-        ) : (
+          points.length > 0 ? (
+            <>
+              <strong>Area Mode</strong>
+              <div>{area.toFixed(2)} m²</div>
+              <div>{(area / 1_000_000).toFixed(4)} km²</div>
+              <div>{(area / 10_000).toFixed(4)} hectares</div>
+              <div>{(area * 0.000247105).toFixed(4)} acres</div>
+            </>
+          ) : (
+            <div>No points selected</div>
+          )
+        ) : distancePoints.length === 2 ? (
           <>
             <strong>Distance Mode</strong>
-            {distancePoints.length === 2 ? <div>{distance.toFixed(2)} meters</div> : <div>Click two points to measure distance</div>}
+            <div>{distance.toFixed(2)} meters</div>
           </>
+        ) : (
+          <div>No points selected</div>
         )}
       </div>
 
@@ -230,7 +225,6 @@ export default function App() {
 
         {points.length > 2 && mode === "area" && <Polygon positions={points} />}
         {points.map((pos, idx) => (mode === "area" ? <Marker key={idx} position={pos} /> : null))}
-
         {distancePoints.length === 2 && mode === "distance" && <Polyline positions={distancePoints} color="red" />}
 
         {/* Locate Button */}
@@ -283,6 +277,9 @@ export default function App() {
       >
         {mode === "area" ? "Switch to Distance Mode" : "Switch to Area Mode"}
       </button>
+
+      {/* Force scale control to show on mobile */}
+      <style>{`.leaflet-control-scale { display:block !important; }`}</style>
     </div>
   );
 }
